@@ -10,9 +10,9 @@ SDL_Window *g_window;
 SDL_Renderer *g_renderer;
 SDL_Surface *g_screen;
 
-const int32_t MINEFIELD_WIDTH = 8;
-const int32_t MINEFIELD_HEIGHT = 10;
-const int32_t MINE_COUNT = MINEFIELD_WIDTH * MINEFIELD_HEIGHT;
+#define MINEFIELD_WIDTH 8
+#define MINEFIELD_HEIGHT 10
+#define MINEFIELD_COUNT (MINEFIELD_WIDTH * MINEFIELD_HEIGHT)
 
 const int32_t SCREEN_WIDTH = 256;
 const int32_t SCREEN_HEIGHT = 320;
@@ -24,6 +24,8 @@ bool init();
 bool load_content();
 void cleanup();
 
+int32_t xy_to_index(int32_t x, int32_t y);
+
 typedef struct mineblock_t {
 	bool safe;
 	bool flagged;
@@ -32,10 +34,10 @@ typedef struct mineblock_t {
 } mineblock_t;
 
 typedef struct minefield_t {
-	mineblock_t blocks[MINEFIELD_WIDTH][MINEFIELD_HEIGHT];
+	mineblock_t *blocks;
 } minefield_t;
 
-minefield_t *minefield_new(int32_t w, int32_t h, int32_t mineCount);
+void minefield_generate(int32_t w, int32_t h, int32_t mineCount, minefield_t *minefield);
 bool minefield_position_valid(minefield_t *self, int32_t x, int32_t y);
 mineblock_t *minefield_block(minefield_t *self, int32_t x, int32_t y);
 
@@ -66,9 +68,10 @@ typedef struct button_t {
 	SDL_Rect rectangle;
 } button_t;
 
-button_t buttons[MINE_COUNT];
+button_t *buttons;
 
 button_t *button_new(int32_t x, int32_t y, int32_t w, int32_t h);
+void button_reset(int32_t x, int32_t y, int32_t w, int32_t h, button_t *dest);
 void button_render(button_t *self);
 bool button_contains(button_t *self, int32_t x, int32_t y);
 void button_update_state(button_t *self, mouse_t mouse);
@@ -82,19 +85,27 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	buttons = (button_t *)malloc(sizeof(button_t) * MINEFIELD_COUNT);
+
 	int b = 0;
 	for (int i = 0; i < MINEFIELD_WIDTH; ++i) {
 		for (int j = 0; j < MINEFIELD_HEIGHT; ++j) {
-			buttons[b++] = *button_new(i * 32,
+			button_reset(
+				i * 32, 
 				j * 32,
 				BUTTON_SIZE,
-				BUTTON_SIZE);
+				BUTTON_SIZE,
+				&buttons[b++]
+			);
 		}
 	}
 
 	g_mouse.x = 0;
 	g_mouse.y = 0;
 	g_mouse.clickDown = false;
+
+	minefield_t minefield;
+	minefield_generate(MINEFIELD_WIDTH, MINEFIELD_HEIGHT, 10, &minefield);
 
 	bool running = true;
 	SDL_Event sdlEvent;
@@ -144,7 +155,7 @@ int main(int argc, char *argv[]) {
 		SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
 		SDL_RenderClear(g_renderer);
 
-		for (int button = 0; button < MINE_COUNT; ++button) {
+		for (int button = 0; button < MINEFIELD_COUNT; ++button) {
 			button_update_state(&buttons[button], g_mouse);
 			button_render(&buttons[button]);
 		}		
@@ -201,29 +212,30 @@ void cleanup() {
 	SDL_Quit();
 }
 
-minefield_t *minefield_new(int32_t w, int32_t h, int32_t mineCount) {
-	minefield_t *minefield = (minefield_t *)malloc(sizeof(minefield_t));
+int32_t xy_to_index(int32_t x, int32_t y) {
+	return y * MINEFIELD_WIDTH + x;
+}
+
+void minefield_generate(int32_t w, int32_t h, int32_t mineCount, minefield_t *minefield) {
+	minefield->blocks = (mineblock_t *)malloc(sizeof(mineblock_t) * (w * h));
 
 	//init blocks
-	for (int32_t x = 0; x < MINEFIELD_WIDTH; ++x) {
-		for (int32_t y = 0; y < MINEFIELD_HEIGHT; ++y) {
-			minefield->blocks[x][y].safe = true;
-			minefield->blocks[x][y].flagged = false;
-			minefield->blocks[x][y].opened = false;
-			minefield->blocks[x][y].adjacent_mines = 0;
-		}
+	for (int32_t b = 0; b < MINEFIELD_COUNT; ++b) {
+		minefield->blocks[b].safe = true;
+		minefield->blocks[b].flagged = false;
+		minefield->blocks[b].opened = false;
+		minefield->blocks[b].adjacent_mines = 0;
 	}
 
 	while (mineCount > 0) {
 		int32_t rx = rand() % MINEFIELD_WIDTH;
 		int32_t ry = rand() % MINEFIELD_HEIGHT;
-		if (minefield->blocks[rx][ry].safe) {
-			minefield->blocks[rx][ry].safe = false;
+		int32_t r = xy_to_index(rx, ry);
+		if (minefield->blocks[r].safe) {
+			minefield->blocks[r].safe = false;
 			--mineCount;
 		}
 	}
-
-	return minefield;
 }
 
 bool minefield_position_valid(minefield_t *self, int32_t x, int32_t y) {
@@ -236,7 +248,7 @@ mineblock_t *minefield_block(minefield_t *self, int32_t x, int32_t y) {
 		return NULL;
 	}
 
-	return &self->blocks[x][y];
+	return &self->blocks[xy_to_index(x, y)];
 }
 
 button_t *button_new(int32_t x, int32_t y, int32_t w, int32_t h) {
@@ -249,6 +261,15 @@ button_t *button_new(int32_t x, int32_t y, int32_t w, int32_t h) {
 	newButton->rectangle.h = h - BUTTON_BORDER * 2;
 
 	return newButton;
+}
+
+void button_reset(int32_t x, int32_t y, int32_t w, int32_t h, button_t *dest) {
+	dest->enabled = true;
+	dest->state = STATE_UP;
+	dest->rectangle.x = x + BUTTON_BORDER;
+	dest->rectangle.y = y + BUTTON_BORDER;
+	dest->rectangle.w = w - BUTTON_BORDER * 2;
+	dest->rectangle.h = h - BUTTON_BORDER * 2;
 }
 
 void button_render(button_t *self) {
