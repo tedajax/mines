@@ -4,12 +4,16 @@
 #include <stdint.h>
 #include <time.h>
 #include <math.h>
+#include <string.h>
 
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 
 SDL_Window *g_window;
 SDL_Renderer *g_renderer;
 SDL_Surface *g_screen;
+
+TTF_Font *g_font;
 
 #define MINEFIELD_WIDTH 8
 #define MINEFIELD_HEIGHT 10
@@ -27,6 +31,27 @@ void cleanup();
 
 int32_t xy_to_index(int32_t x, int32_t y, int32_t w, int32_t h);
 void index_to_xy(int32_t index, int32_t w, int32_t h, int32_t *x, int32_t *y);
+
+typedef struct strtexture_t {
+	char *text;
+	int32_t width;
+	int32_t height;
+	SDL_Texture *texture;
+} strtexture_t;
+
+strtexture_t *strtexture_new(const char *text);
+void strtexture_render(strtexture_t *self,
+	int32_t x,
+	int32_t y,
+	SDL_Color *color);
+
+#define MAX_STR_TEXTURES 20
+strtexture_t *g_strTextures[MAX_STR_TEXTURES];
+int32_t g_strTexIndex;
+
+void strtextures_init();
+void strtextures_add(const char *text);
+strtexture_t *strtextures_get(const char *text);
 
 typedef struct mineblock_t {
 	bool safe;
@@ -59,13 +84,6 @@ typedef struct mouse_t {
 
 mouse_t g_mouse;
 
-typedef struct color_t {
-	uint8_t r;
-	uint8_t g;
-	uint8_t b;
-	uint8_t a;
-} color_t;
-
 typedef enum {
 	STATE_UP,
 	STATE_DOWN,
@@ -90,6 +108,15 @@ void button_render(button_t *self);
 bool button_contains(button_t *self, int32_t x, int32_t y);
 void button_update_state(button_t *self, mouse_t *mouse);
 
+SDL_Color g_colorRed = 		{ 255,   0,   0, 255 };
+SDL_Color g_colorGreen = 	{   0, 255,   0, 255 };
+SDL_Color g_colorBlue = 	{   0,   0, 225, 255 };
+SDL_Color g_colorCyan = 	{   0, 225, 225, 255 };
+SDL_Color g_colorMagenta = 	{ 225,   0, 225, 255 };
+SDL_Color g_colorYellow = 	{ 225, 225,   0, 255 };
+SDL_Color g_colorWhite =	{ 255, 255, 255, 255 };
+SDL_Color g_colorBlack =	{   0,   0,   0, 255 };
+
 int main(int argc, char *argv[]) {
 	if (!init()) {
 		return 1;
@@ -101,6 +128,7 @@ int main(int argc, char *argv[]) {
 
 	minefield_t minefield;
 	minefield_reset(&minefield, MINEFIELD_WIDTH, MINEFIELD_HEIGHT);
+	minefield_seed_mines(&minefield, 25, 0, 0);
 
 	buttons = (button_t *)malloc(sizeof(button_t) * MINEFIELD_COUNT);
 
@@ -124,6 +152,17 @@ int main(int argc, char *argv[]) {
 	g_mouse.x = 0;
 	g_mouse.y = 0;
 	g_mouse.clickDown = false;
+
+	strtextures_init();
+	strtextures_add("0");
+	// strtextures_add("1");
+	// strtextures_add("2");
+	// strtextures_add("3");
+	// strtextures_add("4");
+	// strtextures_add("5");
+	// strtextures_add("6");
+	// strtextures_add("7");
+	// strtextures_add("8");
 
 	bool running = true;
 	SDL_Event sdlEvent;
@@ -161,12 +200,6 @@ int main(int argc, char *argv[]) {
 					if (sdlEvent.button.button == SDL_BUTTON_LEFT) {
 						g_mouse.clickDown = false;
 
-						printf("%d, %d - %d %d\n", 
-							g_mouse.x,
-							g_mouse.y,
-							g_mouse.selectedX,
-							g_mouse.selectedY);
-
 						minefield_reveal(&minefield, 
 							g_mouse.selectedX,
 							g_mouse.selectedY);
@@ -186,7 +219,9 @@ int main(int argc, char *argv[]) {
 		for (int button = 0; button < MINEFIELD_COUNT; ++button) {
 			button_update_state(&buttons[button], &g_mouse);
 			button_render(&buttons[button]);
-		}		
+		}
+
+		strtexture_render(strtextures_get("0"), 10, 10, &g_colorYellow);
 
 		SDL_RenderPresent(g_renderer);
 	}
@@ -226,10 +261,22 @@ bool init() {
 
 	g_screen = SDL_GetWindowSurface(g_window);
 
+	if (TTF_Init() == -1) {
+		printf("SDL_ttf could not initialize, SDL_ttf Error: %s\n",
+			TTF_GetError());
+		return false;
+	}
+
 	return true;
 }
 
 bool load_content() {
+	g_font = TTF_OpenFont("pstart2p.ttf", 12);
+	if (g_font == NULL) {
+		printf("Could not load font, SDL_ttf Error: %s\n", TTF_GetError());
+		return false;
+	}
+
 	return true;
 }
 
@@ -256,6 +303,83 @@ void index_to_xy(int32_t index, int32_t w, int32_t h, int32_t *x, int32_t *y) {
 
 	*x = index % w;
 	*y = floor(index / w);
+}
+
+strtexture_t *strtexture_new(const char *text) {
+	SDL_Color color = {
+		255, 255, 255, 255
+	};
+
+	SDL_Surface *textSurface = TTF_RenderText_Solid(g_font,
+		text,
+		color);
+
+	if (textSurface == NULL) {
+		printf("Unable to render text surface! SDL_ttf Error: %s\n",
+			TTF_GetError());
+		return NULL;
+	}
+
+	strtexture_t *strtexture = (strtexture_t *)malloc(sizeof(strtexture_t));
+	strtexture->text = (char *)malloc(sizeof(char) * strlen(text));
+	strcpy(strtexture->text, text);
+	strtexture->width = textSurface->w;
+	strtexture->height = textSurface->h;
+	strtexture->texture = SDL_CreateTextureFromSurface(g_renderer, textSurface);
+
+	SDL_FreeSurface(textSurface);
+
+	return strtexture;
+}
+
+void strtexture_render(strtexture_t *self,
+	int32_t x,
+	int32_t y,
+	SDL_Color *color) {
+
+	if (color != NULL) {
+		SDL_SetTextureColorMod(self->texture,
+			color->r,
+			color->g,
+			color->b);
+	} else {
+		SDL_SetTextureColorMod(self->texture,
+			255,
+			255,
+			255);
+	}
+
+	SDL_Rect renderRect = { x, y, self->width, self->height };
+
+	SDL_RenderCopyEx(g_renderer, self->texture, NULL, &renderRect, 0, NULL, 0);
+}
+
+void strtextures_init() {
+	g_strTexIndex = 0;
+	for (int i = 0; i < MAX_STR_TEXTURES; ++i) {
+		g_strTextures[i] = NULL;
+	}
+}
+
+void strtextures_add(const char *text) {
+	if (g_strTexIndex >= MAX_STR_TEXTURES) {
+		printf("Error: max size of str texture array reached\n");
+		return;
+	}
+
+	g_strTextures[g_strTexIndex] = strtexture_new(text);
+	++g_strTexIndex;
+}
+
+strtexture_t *strtextures_get(const char *text) {
+	for (int i = 0; i < g_strTexIndex; ++i) {
+		char *t = g_strTextures[i]->text;
+		if (strcmp(t, text) == 0) {
+			return g_strTextures[i];
+		}
+	}
+
+	return NULL;
 }
 
 void minefield_reset(minefield_t *self, int32_t w, int32_t h) {
@@ -303,7 +427,11 @@ bool minefield_reveal(minefield_t *self, int32_t x, int32_t y) {
 		self->blocks[index].adjacent_mines = minefield_get_adjacent_count(self,
 			x,
 			y);
+
+		return true;
 	}
+
+	return false;
 }
 
 int32_t minefield_get_adjacent_count(minefield_t *self, int32_t x, int32_t y) {
@@ -371,7 +499,7 @@ void button_reset(int32_t x, int32_t y, int32_t w, int32_t h, button_t *dest) {
 }
 
 void button_render(button_t *self) {
-	color_t color = {
+	SDL_Color color = {
 		0, 0, 0, 255
 	};
 
@@ -397,7 +525,8 @@ void button_render(button_t *self) {
 				break;
 		}
 	} else {
-		color.r = 255;
+		float r = ((float)self->data->adjacent_mines / 8.0f) * 255.0f;
+		color.r = (uint8_t)r;
 	}
 
 	SDL_SetRenderDrawColor(g_renderer, color.r, color.g, color.b, color.a);
