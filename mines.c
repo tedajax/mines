@@ -2,12 +2,17 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <time.h>
 
 #include <SDL2/SDL.h>
 
 SDL_Window *g_window;
 SDL_Renderer *g_renderer;
 SDL_Surface *g_screen;
+
+const int32_t MINEFIELD_WIDTH = 8;
+const int32_t MINEFIELD_HEIGHT = 10;
+const int32_t MINE_COUNT = MINEFIELD_WIDTH * MINEFIELD_HEIGHT;
 
 const int32_t SCREEN_WIDTH = 256;
 const int32_t SCREEN_HEIGHT = 320;
@@ -18,6 +23,21 @@ const int32_t BUTTON_BORDER = 1;
 bool init();
 bool load_content();
 void cleanup();
+
+typedef struct mineblock_t {
+	bool safe;
+	bool flagged;
+	bool opened;
+	int32_t adjacent_mines;
+} mineblock_t;
+
+typedef struct minefield_t {
+	mineblock_t blocks[MINEFIELD_WIDTH][MINEFIELD_HEIGHT];
+} minefield_t;
+
+minefield_t *minefield_new(int32_t w, int32_t h, int32_t mineCount);
+bool minefield_position_valid(minefield_t *self, int32_t x, int32_t y);
+mineblock_t *minefield_block(minefield_t *self, int32_t x, int32_t y);
 
 typedef struct mouse_t {
 	int32_t x;
@@ -46,7 +66,7 @@ typedef struct button_t {
 	SDL_Rect rectangle;
 } button_t;
 
-button_t buttons[80];
+button_t buttons[MINE_COUNT];
 
 button_t *button_new(int32_t x, int32_t y, int32_t w, int32_t h);
 void button_render(button_t *self);
@@ -63,9 +83,12 @@ int main(int argc, char *argv[]) {
 	}
 
 	int b = 0;
-	for (int i = 0; i < 8; ++i) {
-		for (int j = 0; j < 10; ++j) {
-			buttons[b++] = *button_new(i * 32, j * 32, BUTTON_SIZE, BUTTON_SIZE);
+	for (int i = 0; i < MINEFIELD_WIDTH; ++i) {
+		for (int j = 0; j < MINEFIELD_HEIGHT; ++j) {
+			buttons[b++] = *button_new(i * 32,
+				j * 32,
+				BUTTON_SIZE,
+				BUTTON_SIZE);
 		}
 	}
 
@@ -121,7 +144,7 @@ int main(int argc, char *argv[]) {
 		SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
 		SDL_RenderClear(g_renderer);
 
-		for (int button = 0; button < 80; ++button) {
+		for (int button = 0; button < MINE_COUNT; ++button) {
 			button_update_state(&buttons[button], g_mouse);
 			button_render(&buttons[button]);
 		}		
@@ -135,6 +158,8 @@ int main(int argc, char *argv[]) {
 }
 
 bool init() {
+	srand(time(NULL));
+
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
 		printf("SDL coult not be initialized, SDL_Error: %s\n", SDL_GetError());
 		return false;
@@ -174,6 +199,44 @@ void cleanup() {
 	g_window = NULL;
 
 	SDL_Quit();
+}
+
+minefield_t *minefield_new(int32_t w, int32_t h, int32_t mineCount) {
+	minefield_t *minefield = (minefield_t *)malloc(sizeof(minefield_t));
+
+	//init blocks
+	for (int32_t x = 0; x < MINEFIELD_WIDTH; ++x) {
+		for (int32_t y = 0; y < MINEFIELD_HEIGHT; ++y) {
+			minefield->blocks[x][y].safe = true;
+			minefield->blocks[x][y].flagged = false;
+			minefield->blocks[x][y].opened = false;
+			minefield->blocks[x][y].adjacent_mines = 0;
+		}
+	}
+
+	while (mineCount > 0) {
+		int32_t rx = rand() % MINEFIELD_WIDTH;
+		int32_t ry = rand() % MINEFIELD_HEIGHT;
+		if (minefield->blocks[rx][ry].safe) {
+			minefield->blocks[rx][ry].safe = false;
+			--mineCount;
+		}
+	}
+
+	return minefield;
+}
+
+bool minefield_position_valid(minefield_t *self, int32_t x, int32_t y) {
+	return !(x < 0 || x >= MINEFIELD_WIDTH ||
+		y < 0 || y >= MINEFIELD_HEIGHT);
+}
+
+mineblock_t *minefield_block(minefield_t *self, int32_t x, int32_t y) {
+	if (!minefield_position_valid(self, x, y)) {
+		return NULL;
+	}
+
+	return &self->blocks[x][y];
 }
 
 button_t *button_new(int32_t x, int32_t y, int32_t w, int32_t h) {
