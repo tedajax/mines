@@ -68,7 +68,7 @@ typedef struct minefield_t {
 void minefield_reset(minefield_t *self, int32_t w, int32_t h);
 void minefield_seed_mines(minefield_t *self, int32_t mineCount,
 	int32_t safeX, int32_t safeY);
-bool minefield_reveal(minefield_t *self, int32_t x, int32_t y);
+void minefield_reveal(minefield_t *self, int32_t x, int32_t y);
 int32_t minefield_get_adjacent_count(minefield_t *self, int32_t x, int32_t y);
 bool minefield_position_valid(minefield_t *self, int32_t x, int32_t y);
 mineblock_t *minefield_block(minefield_t *self, int32_t x, int32_t y);
@@ -128,7 +128,7 @@ int main(int argc, char *argv[]) {
 
 	minefield_t minefield;
 	minefield_reset(&minefield, MINEFIELD_WIDTH, MINEFIELD_HEIGHT);
-	minefield_seed_mines(&minefield, 25, 0, 0);
+	minefield_seed_mines(&minefield, 10, 0, 0);
 
 	buttons = (button_t *)malloc(sizeof(button_t) * MINEFIELD_COUNT);
 
@@ -170,46 +170,67 @@ int main(int argc, char *argv[]) {
 	while (running) {
 		while (SDL_PollEvent(&sdlEvent) != 0) {
 			switch (sdlEvent.type) {
-				case SDL_QUIT:
-					running = false;
-					break;
+			case SDL_QUIT:
+				running = false;
+				break;
 
-				case SDL_KEYDOWN:
-					switch (sdlEvent.key.keysym.sym) {
-						case SDLK_ESCAPE:
-							running = false;
-							break;
+			case SDL_KEYDOWN:
+				switch (sdlEvent.key.keysym.sym) {
+					case SDLK_ESCAPE:
+						running = false;
+						break;
+				}
+				break;
+
+			case SDL_MOUSEMOTION:
+				SDL_GetMouseState(&(g_mouse.x), &(g_mouse.y));
+				break;
+
+			case SDL_MOUSEBUTTONDOWN:
+				SDL_GetMouseState(&(g_mouse.x), &(g_mouse.y));
+
+				button_t *current;
+
+				for (int b = 0; b < MINEFIELD_COUNT; ++b) {
+					if (button_contains(&buttons[b],
+										g_mouse.x,
+										g_mouse.y)) {
+						current = &buttons[b];
 					}
-					break;
+				}				
 
-				case SDL_MOUSEMOTION:
-					SDL_GetMouseState(&(g_mouse.x), &(g_mouse.y));
-					break;
+				if (sdlEvent.button.button == SDL_BUTTON_LEFT) {
+					g_mouse.clickDown = true;
 
-				case SDL_MOUSEBUTTONDOWN:
-					SDL_GetMouseState(&(g_mouse.x), &(g_mouse.y));
+					if (!current->data->flagged) {
+						g_mouse.selectedX = current->gx;
+						g_mouse.selectedY = current->gy;
+					}					
+				} else if (sdlEvent.button.button == SDL_BUTTON_RIGHT) {
+					current->data->flagged = !current->data->flagged;
+				}
+				break;
 
-					if (sdlEvent.button.button == SDL_BUTTON_LEFT) {
-						g_mouse.clickDown = true;
-					}
-					break;
+			case SDL_MOUSEBUTTONUP:
+				SDL_GetMouseState(&(g_mouse.x), &(g_mouse.y));
 
-				case SDL_MOUSEBUTTONUP:
-					SDL_GetMouseState(&(g_mouse.x), &(g_mouse.y));
+				if (sdlEvent.button.button == SDL_BUTTON_LEFT) {
+					g_mouse.clickDown = false;
 
-					if (sdlEvent.button.button == SDL_BUTTON_LEFT) {
-						g_mouse.clickDown = false;
 
+					int32_t index = xy_to_index(g_mouse.selectedX,
+						g_mouse.selectedY,
+						minefield.width,
+						minefield.height);
+
+					if (button_contains(&buttons[index],
+						g_mouse.x, g_mouse.y)) {
 						minefield_reveal(&minefield, 
 							g_mouse.selectedX,
 							g_mouse.selectedY);
 					}
-					break;
-			}
-			if (sdlEvent.type == SDL_QUIT) {
-				
-			} else if (sdlEvent.type == SDL_KEYDOWN) {
-				
+				}
+				break;
 			}
 		}
 
@@ -414,22 +435,34 @@ void minefield_seed_mines(minefield_t *self, int32_t mineCount,
 	}
 }
 
-bool minefield_reveal(minefield_t *self, int32_t x, int32_t y) {
+void minefield_reveal(minefield_t *self, int32_t x, int32_t y) {
 	if (!minefield_position_valid(self, x, y)) {
-		return true;
+		return;
 	}
 
 	int32_t index = xy_to_index(x, y, self->width, self->height);
+
+	if (self->blocks[index].opened) {
+		return;
+	}
+	
 	if (self->blocks[index].safe) {
 		self->blocks[index].opened = true;
-		self->blocks[index].adjacent_mines = minefield_get_adjacent_count(self,
+		int32_t adjacent = minefield_get_adjacent_count(self,
 			x,
 			y);
-
-		return true;
+		self->blocks[index].adjacent_mines = adjacent;
+		if (adjacent == 0) {
+			minefield_reveal(self, x - 1, y - 1);
+			minefield_reveal(self, x + 0, y - 1);
+			minefield_reveal(self, x + 1, y - 1);
+			minefield_reveal(self, x - 1, y + 0);
+			minefield_reveal(self, x + 1, y + 0);
+			minefield_reveal(self, x - 1, y + 1);
+			minefield_reveal(self, x + 0, y + 1);
+			minefield_reveal(self, x - 1, y + 1);
+		}
 	}
-
-	return false;
 }
 
 int32_t minefield_get_adjacent_count(minefield_t *self, int32_t x, int32_t y) {
@@ -544,6 +577,18 @@ void button_render(button_t *self) {
 			self->rectangle.y + 8,
 			&g_colorBlack);
 	}
+
+	if (self->data->flagged) {
+		SDL_Rect flagRect = {
+			self->rectangle.x + 8,
+			self->rectangle.y + 8,
+			16,
+			16
+		};
+
+		SDL_SetRenderDrawColor(g_renderer, 255, 0, 0, 255);
+		SDL_RenderFillRect(g_renderer, &flagRect);
+	}
 }
 
 bool button_contains(button_t *self, int32_t x, int32_t y) {
@@ -554,15 +599,23 @@ bool button_contains(button_t *self, int32_t x, int32_t y) {
 }
 
 void button_update_state(button_t *self, mouse_t *mouse) {
-	if (!button_contains(self, mouse->x, mouse->y)) {
+	if (self->data->flagged) {
 		self->state = STATE_UP;
-	} else {
-		if (mouse->clickDown) {
-			mouse->selectedX = self->gx;
-			mouse->selectedY = self->gy;
+		return;
+	}
+
+	if (mouse->clickDown) {
+		if (mouse->selectedX == self->gx && 
+			mouse->selectedY == self->gy) {
 			self->state = STATE_DOWN;
 		} else {
+			self->state = STATE_UP;
+		}
+	} else {
+		if (button_contains(self, mouse->x, mouse->y)) {
 			self->state = STATE_HOVER;
+		} else {
+			self->state = STATE_UP;
 		}
 	}
 }
