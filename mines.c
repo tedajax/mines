@@ -155,14 +155,14 @@ int main(int argc, char *argv[]) {
 
 	strtextures_init();
 	strtextures_add("0");
-	// strtextures_add("1");
-	// strtextures_add("2");
-	// strtextures_add("3");
-	// strtextures_add("4");
-	// strtextures_add("5");
-	// strtextures_add("6");
-	// strtextures_add("7");
-	// strtextures_add("8");
+	strtextures_add("1");
+	strtextures_add("2");
+	strtextures_add("3");
+	strtextures_add("4");
+	strtextures_add("5");
+	strtextures_add("6");
+	strtextures_add("7");
+	strtextures_add("8");
 
 	bool running = true;
 	SDL_Event sdlEvent;
@@ -220,8 +220,6 @@ int main(int argc, char *argv[]) {
 			button_update_state(&buttons[button], &g_mouse);
 			button_render(&buttons[button]);
 		}
-
-		strtexture_render(strtextures_get("0"), 10, 10, &g_colorYellow);
 
 		SDL_RenderPresent(g_renderer);
 	}
@@ -503,6 +501,8 @@ void button_render(button_t *self) {
 		0, 0, 0, 255
 	};
 
+	bool renderNumber = false;
+
 	if (!self->data->opened) {
 		switch (self->state) {
 			default:
@@ -525,12 +525,25 @@ void button_render(button_t *self) {
 				break;
 		}
 	} else {
-		float r = ((float)self->data->adjacent_mines / 8.0f) * 255.0f;
-		color.r = (uint8_t)r;
+		color.r = 220;
+		color.g = 220;
+		color.b = 220;
+
+		renderNumber = true;
 	}
 
 	SDL_SetRenderDrawColor(g_renderer, color.r, color.g, color.b, color.a);
 	SDL_RenderFillRect(g_renderer, &self->rectangle);
+
+	if (renderNumber) {
+		char name[5];
+		sprintf(name, "%d", self->data->adjacent_mines);
+
+		strtexture_render(strtextures_get(name),
+			self->rectangle.x + 8,
+			self->rectangle.y + 8,
+			&g_colorBlack);
+	}
 }
 
 bool button_contains(button_t *self, int32_t x, int32_t y) {
