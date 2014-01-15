@@ -1,1 +1,1 @@
-gcc mines.c -o mines.exe -IC:\dev\include\ --std=c99 -lmingw32 -LC:\dev\lib\i686-w64-mingw32\lib -lSDL2main -lSDL2 -mwindows
+gcc mines.c -o mines.exe -IC:\dev\include\ --std=c99 -lmingw32 -LC:\dev\lib\i686-w64-mingw32\lib -lSDL2main -lSDL2 -lSDL2_ttf -mwindows
