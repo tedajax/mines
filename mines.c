@@ -20,7 +20,7 @@ TTF_Font *g_font;
 #define MINEFIELD_COUNT (MINEFIELD_WIDTH * MINEFIELD_HEIGHT)
 
 const int32_t SCREEN_WIDTH = 256;
-const int32_t SCREEN_HEIGHT = 320;
+const int32_t SCREEN_HEIGHT = 352;
 
 const int32_t BUTTON_SIZE = 32;
 const int32_t BUTTON_BORDER = 1;
@@ -62,6 +62,7 @@ typedef struct mineblock_t {
 
 typedef struct minefield_t {
 	int32_t width, height, size;
+	bool seeded;
 	mineblock_t *blocks;
 } minefield_t;
 
@@ -94,16 +95,20 @@ typedef struct button_t {
 	bool enabled;
 	int32_t gx;
 	int32_t gy;
+	char *text;
+	bool showText;
 	button_state_e state;
 	SDL_Rect rectangle;
 
 	mineblock_t *data;
 } button_t;
 
+button_t *g_resetButton;
 button_t *buttons;
 
 button_t *button_new(int32_t x, int32_t y, int32_t w, int32_t h);
 void button_reset(int32_t x, int32_t y, int32_t w, int32_t h, button_t *dest);
+void mine_button_render(button_t *self);
 void button_render(button_t *self);
 bool button_contains(button_t *self, int32_t x, int32_t y);
 void button_update_state(button_t *self, mouse_t *mouse);
@@ -128,7 +133,6 @@ int main(int argc, char *argv[]) {
 
 	minefield_t minefield;
 	minefield_reset(&minefield, MINEFIELD_WIDTH, MINEFIELD_HEIGHT);
-	minefield_seed_mines(&minefield, 10, 0, 0);
 
 	buttons = (button_t *)malloc(sizeof(button_t) * MINEFIELD_COUNT);
 
@@ -137,7 +141,7 @@ int main(int argc, char *argv[]) {
 		for (int j = 0; j < MINEFIELD_HEIGHT; ++j) {
 			button_reset(
 				i * 32, 
-				j * 32,
+				j * 32 + 32,
 				BUTTON_SIZE,
 				BUTTON_SIZE,
 				&buttons[b]
@@ -148,6 +152,10 @@ int main(int argc, char *argv[]) {
 			++b;
 		}
 	}
+
+	g_resetButton = button_new(SCREEN_WIDTH / 2 - 32, 0, 64, 32);
+	g_resetButton->text = "reset";
+	g_resetButton->showText = true;
 
 	g_mouse.x = 0;
 	g_mouse.y = 0;
@@ -163,6 +171,8 @@ int main(int argc, char *argv[]) {
 	strtextures_add("6");
 	strtextures_add("7");
 	strtextures_add("8");
+	strtextures_add("9");
+	strtextures_add("reset");
 
 	bool running = true;
 	SDL_Event sdlEvent;
@@ -225,6 +235,13 @@ int main(int argc, char *argv[]) {
 
 					if (button_contains(&buttons[index],
 						g_mouse.x, g_mouse.y)) {
+						if (!minefield.seeded) {
+							minefield_seed_mines(&minefield,
+								10,
+								g_mouse.selectedX,
+								g_mouse.selectedY);					
+						}
+
 						minefield_reveal(&minefield, 
 							g_mouse.selectedX,
 							g_mouse.selectedY);
@@ -239,8 +256,11 @@ int main(int argc, char *argv[]) {
 
 		for (int button = 0; button < MINEFIELD_COUNT; ++button) {
 			button_update_state(&buttons[button], &g_mouse);
-			button_render(&buttons[button]);
+			mine_button_render(&buttons[button]);
 		}
+
+		button_update_state(g_resetButton, &g_mouse);
+		button_render(g_resetButton);
 
 		SDL_RenderPresent(g_renderer);
 	}
@@ -408,6 +428,8 @@ void minefield_reset(minefield_t *self, int32_t w, int32_t h) {
 	self->blocks = (mineblock_t *)malloc(sizeof(mineblock_t) *
 										 self->size);
 
+	self->seeded = false;
+
 	//init blocks
 	for (int32_t b = 0; b < self->size; ++b) {
 		self->blocks[b].safe = true;
@@ -419,6 +441,8 @@ void minefield_reset(minefield_t *self, int32_t w, int32_t h) {
 
 void minefield_seed_mines(minefield_t *self, int32_t mineCount,
 	int32_t safeX, int32_t safeY) {
+	self->seeded = true;
+
 	while (mineCount > 0) {
 		int32_t rx = rand() % self->width;
 		int32_t ry = rand() % self->height;
@@ -530,6 +554,43 @@ void button_reset(int32_t x, int32_t y, int32_t w, int32_t h, button_t *dest) {
 }
 
 void button_render(button_t *self) {
+	SDL_Color color = {
+		0, 0, 0, 255
+	};
+
+	switch (self->state) {
+		default:
+		case STATE_UP:
+			color.r = 200;
+			color.g = 200;
+			color.b = 200;
+			break;
+
+		case STATE_DOWN:
+			color.r = 50;
+			color.g = 50;
+			color.b = 50;
+			break;
+
+		case STATE_HOVER:
+			color.r = 125;
+			color.g = 125;
+			color.b = 125;
+			break;
+	}
+	
+	SDL_SetRenderDrawColor(g_renderer, color.r, color.g, color.b, color.a);
+	SDL_RenderFillRect(g_renderer, &self->rectangle);
+
+	if (self->showText) {
+		strtexture_render(strtextures_get(self->text),
+			self->rectangle.x + 2,
+			self->rectangle.y + 8,
+			&g_colorBlack);
+	}
+}
+
+void mine_button_render(button_t *self) {
 	SDL_Color color = {
 		0, 0, 0, 255
 	};
